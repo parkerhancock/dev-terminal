@@ -7,6 +7,7 @@ import * as pty from "node-pty";
 import type { IPty } from "node-pty";
 import type { Socket } from "net";
 import stripAnsi from "strip-ansi";
+import ansiToSvg from "ansi-to-svg";
 import type {
   CreateTerminalRequest,
   CreateTerminalResponse,
@@ -16,6 +17,7 @@ import type {
   ResizeRequest,
   ResizeResponse,
   SnapshotResponse,
+  SnapshotFormat,
   ServerInfoResponse,
   TerminalSize,
 } from "./types.js";
@@ -236,6 +238,8 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
   });
 
   // GET /terminals/:name/snapshot - get screen state
+  // Query params:
+  //   format: "json" (default) | "svg"
   app.get("/terminals/:name/snapshot", (req: Request<{ name: string }>, res: Response) => {
     const name = decodeURIComponent(req.params.name);
     const entry = registry.get(name);
@@ -245,6 +249,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       return;
     }
 
+    const format = (req.query.format as SnapshotFormat) || "json";
     const raw = entry.buffer;
     const text = stripAnsi(raw);
 
@@ -254,6 +259,26 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     const maxLines = entry.size.rows * 3; // 3x terminal height for context
     const lines = allLines.slice(-maxLines);
 
+    // Generate SVG if requested
+    let svg: string | undefined;
+    if (format === "svg") {
+      try {
+        // Use the raw ANSI content for SVG rendering
+        // Take only visible screen portion for cleaner SVG
+        const rawLines = raw.split("\n");
+        const visibleRaw = rawLines.slice(-entry.size.rows).join("\n");
+        svg = ansiToSvg(visibleRaw, {
+          paddingTop: 10,
+          paddingLeft: 10,
+          paddingRight: 10,
+          paddingBottom: 10,
+        });
+      } catch (err) {
+        // If SVG rendering fails, continue without it
+        console.error("SVG rendering failed:", err);
+      }
+    }
+
     const response: SnapshotResponse = {
       text,
       raw,
@@ -261,6 +286,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       size: entry.size,
       alive: entry.alive,
       exitCode: entry.exitCode,
+      svg,
     };
     res.json(response);
   });

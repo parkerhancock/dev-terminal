@@ -46,6 +46,8 @@ export interface ResizeResponse {
   size: TerminalSize;
 }
 
+export type SnapshotFormat = "json" | "svg";
+
 export interface SnapshotResponse {
   /** Plain text content (ANSI codes stripped) */
   text: string;
@@ -59,6 +61,8 @@ export interface SnapshotResponse {
   alive: boolean;
   /** Exit code if process has exited */
   exitCode?: number;
+  /** SVG rendering (only if format=svg requested) */
+  svg?: string;
 }
 
 export interface ServerInfoResponse {

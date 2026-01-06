@@ -9,6 +9,7 @@ import type {
   WriteResponse,
   ResizeResponse,
   SnapshotResponse,
+  SnapshotFormat,
   ServerInfoResponse,
   TerminalSize,
   SpecialKeyName,
@@ -33,6 +34,11 @@ export interface TerminalOptions {
   env?: Record<string, string>;
 }
 
+export interface SnapshotOptions {
+  /** Output format: "json" (default) or "svg" */
+  format?: SnapshotFormat;
+}
+
 export interface Terminal {
   /** Terminal name */
   name: string;
@@ -51,7 +57,7 @@ export interface Terminal {
   writeLine: (line: string) => Promise<void>;
 
   /** Get current screen snapshot */
-  snapshot: () => Promise<SnapshotResponse>;
+  snapshot: (options?: SnapshotOptions) => Promise<SnapshotResponse>;
 
   /** Resize terminal */
   resize: (cols: number, rows: number) => Promise<TerminalSize>;
@@ -140,8 +146,14 @@ export async function connect(serverUrl = "http://localhost:9333"): Promise<DevT
         await this.write(line + "\r");
       },
 
-      async snapshot(): Promise<SnapshotResponse> {
-        return apiFetch<SnapshotResponse>(`/terminals/${encodeURIComponent(name)}/snapshot`);
+      async snapshot(options: SnapshotOptions = {}): Promise<SnapshotResponse> {
+        const params = new URLSearchParams();
+        if (options.format) {
+          params.set("format", options.format);
+        }
+        const query = params.toString();
+        const url = `/terminals/${encodeURIComponent(name)}/snapshot${query ? `?${query}` : ""}`;
+        return apiFetch<SnapshotResponse>(url);
       },
 
       async resize(cols: number, rows: number): Promise<TerminalSize> {
