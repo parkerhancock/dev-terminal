@@ -5,8 +5,11 @@ Development context for Claude Code.
 ## Commands
 
 ```bash
-# Start server (default port 9333)
-npm run start-server
+# Start server (headless)
+./server.sh
+
+# Start server with browser UI
+./server.sh --headed
 
 # Development with watch
 npm run dev
@@ -23,18 +26,26 @@ npm run format
 **Server** (`src/index.ts`):
 
 - Express HTTP server managing PTY sessions
-- Registry of named terminals (Map<string, IPty>)
+- WebSocket server for real-time streaming (headed mode)
+- Registry of named terminals (Map<string, TerminalEntry>)
 - Handles create/write/key/snapshot/resize operations
+- SVG rendering via ansi-to-svg
 
 **Client** (`src/client.ts`):
 
 - TypeScript client for the HTTP API
-- Methods: createTerminal, write, key, snapshot, resize, waitForText, waitForExit
+- Methods: terminal, write, key, snapshot, resize, waitForText, waitForExit
 
 **Types** (`src/types.ts`):
 
 - Shared request/response interfaces
 - SpecialKeys mapping (arrows, ctrl combos, function keys)
+
+**Browser UI** (`public/index.html`):
+
+- xterm.js-based terminal viewer
+- WebSocket client for real-time updates
+- Tabbed interface for multiple terminals
 
 ## Key Patterns
 

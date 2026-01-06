@@ -12,10 +12,24 @@ Terminal automation that maintains PTY sessions across script executions. Run TU
 Start the server in a background terminal:
 
 ```bash
-cd dev-terminal && npm install && npm run start-server &
+cd dev-terminal && npm install && ./server.sh &
 ```
 
 **Wait for the `Ready` message before running scripts.**
+
+### Headed Mode (Optional)
+
+For visual debugging, start with browser UI:
+
+```bash
+cd dev-terminal && ./server.sh --headed &
+```
+
+This opens a browser window showing all terminals in real-time. Useful for:
+
+- Watching AI actions as they happen
+- Manual intervention if needed
+- Debugging TUI interactions
 
 ## Writing Scripts
 
@@ -107,6 +121,10 @@ const snap = await term.snapshot();
 console.log(snap.text); // Plain text (no ANSI codes)
 console.log(snap.lines); // Array of lines
 console.log(snap.alive); // Process still running?
+
+// Get SVG rendering (for visual analysis)
+const svgSnap = await term.snapshot({ format: "svg" });
+console.log(svgSnap.svg); // SVG string
 
 // Resize
 await term.resize(80, 24);
