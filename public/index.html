@@ -153,37 +153,6 @@
         overflow: hidden;
       }
 
-      /* Resize handles */
-      .resize-handle {
-        position: absolute;
-        background: transparent;
-        z-index: 10;
-      }
-      .resize-handle:hover {
-        background: #4ec9b0;
-      }
-      .resize-handle.horizontal {
-        height: 6px;
-        cursor: row-resize;
-        left: 0;
-        right: 0;
-        bottom: -3px;
-      }
-      .resize-handle.vertical {
-        width: 6px;
-        cursor: col-resize;
-        top: 0;
-        bottom: 0;
-        right: -3px;
-      }
-      .resize-handle.corner {
-        width: 12px;
-        height: 12px;
-        cursor: nwse-resize;
-        right: -6px;
-        bottom: -6px;
-      }
-
       .no-terminals {
         display: flex;
         align-items: center;
@@ -224,9 +193,6 @@
       let focusedTerminal = null;
       let ws = null;
       let viewMode = "tabs"; // 'tabs' or 'tiled'
-
-      // Tiled layout state
-      const tileLayout = new Map(); // name -> { width, height, x, y }
 
       function connect() {
         ws = new WebSocket(wsUrl);
@@ -317,19 +283,6 @@
         wrapper.className = "term-wrapper";
         container.appendChild(wrapper);
 
-        // Resize handles (for tiled mode)
-        const hHandle = document.createElement("div");
-        hHandle.className = "resize-handle horizontal";
-        container.appendChild(hHandle);
-
-        const vHandle = document.createElement("div");
-        vHandle.className = "resize-handle vertical";
-        container.appendChild(vHandle);
-
-        const cornerHandle = document.createElement("div");
-        cornerHandle.className = "resize-handle corner";
-        container.appendChild(cornerHandle);
-
         document.getElementById("main").appendChild(container);
 
         // Create xterm instance
@@ -370,16 +323,7 @@
           }
         });
 
-        // Initialize tile layout
-        tileLayout.set(name, {
-          width: 50,
-          height: 50,
-        });
-
         terminals.set(name, { term, container, tab, fit, wrapper, label });
-
-        // Setup resize handlers
-        setupResizeHandlers(name, container, hHandle, vHandle, cornerHandle);
 
         // Hide "no terminals" message
         document.getElementById("no-terminals").style.display = "none";
@@ -399,65 +343,6 @@
         });
       }
 
-      function setupResizeHandlers(name, container, hHandle, vHandle, cornerHandle) {
-        let startX, startY, startWidth, startHeight;
-
-        function onMouseMove(e, resizeH, resizeV) {
-          const main = document.getElementById("main");
-          const rect = main.getBoundingClientRect();
-          const layout = tileLayout.get(name);
-
-          if (resizeH) {
-            const newHeight =
-              ((e.clientY - container.offsetTop - main.offsetTop) / rect.height) * 100;
-            layout.height = Math.max(15, Math.min(85, newHeight));
-          }
-          if (resizeV) {
-            const newWidth =
-              ((e.clientX - container.offsetLeft - main.offsetLeft) / rect.width) * 100;
-            layout.width = Math.max(15, Math.min(85, newWidth));
-          }
-
-          updateTiledLayout();
-        }
-
-        function onMouseUp() {
-          document.removeEventListener("mousemove", currentMoveHandler);
-          document.removeEventListener("mouseup", onMouseUp);
-          document.body.style.cursor = "";
-          document.body.style.userSelect = "";
-        }
-
-        let currentMoveHandler;
-
-        hHandle.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          document.body.style.cursor = "row-resize";
-          document.body.style.userSelect = "none";
-          currentMoveHandler = (e) => onMouseMove(e, true, false);
-          document.addEventListener("mousemove", currentMoveHandler);
-          document.addEventListener("mouseup", onMouseUp);
-        });
-
-        vHandle.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          document.body.style.cursor = "col-resize";
-          document.body.style.userSelect = "none";
-          currentMoveHandler = (e) => onMouseMove(e, false, true);
-          document.addEventListener("mousemove", currentMoveHandler);
-          document.addEventListener("mouseup", onMouseUp);
-        });
-
-        cornerHandle.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          document.body.style.cursor = "nwse-resize";
-          document.body.style.userSelect = "none";
-          currentMoveHandler = (e) => onMouseMove(e, true, true);
-          document.addEventListener("mousemove", currentMoveHandler);
-          document.addEventListener("mouseup", onMouseUp);
-        });
-      }
-
       function removeTerminal(name) {
         const entry = terminals.get(name);
         if (!entry) return;
@@ -466,7 +351,6 @@
         entry.container.remove();
         entry.tab.remove();
         terminals.delete(name);
-        tileLayout.delete(name);
 
         if (terminals.size === 0) {
           document.getElementById("no-terminals").style.display = "flex";
@@ -565,16 +449,7 @@
         const baseWidth = 100 / cols;
         const baseHeight = 100 / rows;
 
-        let i = 0;
         for (const [name, entry] of terminals) {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-
-          // Use custom sizes if set, otherwise use grid defaults
-          const layout = tileLayout.get(name);
-          const width = layout?.width || baseWidth;
-          const height = layout?.height || baseHeight;
-
           entry.container.style.width = `calc(${baseWidth}% - 2px)`;
           entry.container.style.height = `calc(${baseHeight}% - 2px)`;
           entry.container.style.flex = "none";
@@ -583,8 +458,6 @@
           requestAnimationFrame(() => {
             entry.fit.fit();
           });
-
-          i++;
         }
       }
 
