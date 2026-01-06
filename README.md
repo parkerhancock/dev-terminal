@@ -13,9 +13,20 @@ Terminal automation for AI assistants. Inspired by [dev-browser](https://github.
 
 ## Prerequisites
 
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - [Node.js](https://nodejs.org) (v18 or later) with npm
 
 ## Installation
+
+### Claude Code
+
+```
+/install parkerhancock/dev-terminal
+```
+
+Restart Claude Code after installation.
+
+### Manual / Standalone
 
 ```bash
 git clone https://github.com/parkerhancock/dev-terminal
