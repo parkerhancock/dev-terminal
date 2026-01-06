@@ -2,12 +2,19 @@
  * dev-terminal server: manages persistent PTY sessions via HTTP API.
  */
 
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { exec } from "child_process";
 import express, { type Express, type Request, type Response } from "express";
 import * as pty from "node-pty";
 import type { IPty } from "node-pty";
 import type { Socket } from "net";
+import { WebSocketServer, WebSocket } from "ws";
 import stripAnsi from "strip-ansi";
 import ansiToSvg from "ansi-to-svg";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import type {
   CreateTerminalRequest,
   CreateTerminalResponse,
@@ -26,6 +33,8 @@ export type { TerminalSize };
 
 export interface ServeOptions {
   port?: number;
+  /** Open browser UI for watching terminals */
+  headed?: boolean;
 }
 
 export interface DevTerminalServer {
@@ -50,12 +59,30 @@ const MAX_BUFFER_SIZE = 100000; // ~100KB of scrollback
 
 export async function serve(options: ServeOptions = {}): Promise<DevTerminalServer> {
   const port = options.port ?? 9333;
+  const headed = options.headed ?? false;
 
   // Registry: name -> TerminalEntry
   const registry = new Map<string, TerminalEntry>();
 
+  // WebSocket clients for headed mode
+  const wsClients = new Set<WebSocket>();
+
+  // Broadcast message to all WebSocket clients
+  function broadcast(message: object) {
+    const data = JSON.stringify(message);
+    for (const client of wsClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    }
+  }
+
   const app: Express = express();
   app.use(express.json());
+
+  // Serve static files for headed mode
+  const publicDir = join(__dirname, "..", "public");
+  app.use(express.static(publicDir));
 
   // GET / - server info
   app.get("/", (_req: Request, res: Response) => {
@@ -125,7 +152,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
         size: { cols: termCols, rows: termRows },
       };
 
-      // Capture output to buffer
+      // Capture output to buffer and broadcast to WebSocket clients
       ptyProcess.onData((data: string) => {
         if (entry) {
           entry.buffer += data;
@@ -133,6 +160,8 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
           if (entry.buffer.length > entry.maxBufferSize) {
             entry.buffer = entry.buffer.slice(-entry.maxBufferSize);
           }
+          // Broadcast to WebSocket clients
+          broadcast({ type: "data", name, data });
         }
       });
 
@@ -141,10 +170,14 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
         if (entry) {
           entry.alive = false;
           entry.exitCode = exitCode;
+          broadcast({ type: "closed", name, exitCode });
         }
       });
 
       registry.set(name, entry);
+
+      // Notify WebSocket clients of new terminal
+      broadcast({ type: "created", name, size: entry.size });
 
       const response: CreateTerminalResponse = {
         name,
@@ -174,6 +207,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       // Already dead
     }
     registry.delete(name);
+    broadcast({ type: "closed", name });
     res.json({ success: true });
   });
 
@@ -229,6 +263,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
 
     entry.pty.resize(cols, rows);
     entry.size = { cols, rows };
+    broadcast({ type: "resized", name, size: entry.size });
 
     const response: ResizeResponse = {
       success: true,
@@ -308,7 +343,50 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
   // Start server
   const server = app.listen(port, () => {
     console.log(`dev-terminal server running on http://localhost:${port}`);
+    if (headed) {
+      console.log(`Opening browser UI at http://localhost:${port}`);
+    }
     console.log("Ready");
+  });
+
+  // Set up WebSocket server
+  const wss = new WebSocketServer({ server, path: "/ws" });
+
+  wss.on("connection", (ws: WebSocket) => {
+    wsClients.add(ws);
+
+    // Send current terminal list to new client
+    const terminals = Array.from(registry.entries()).map(([name, entry]) => ({
+      name,
+      size: entry.size,
+    }));
+    ws.send(JSON.stringify({ type: "terminals", terminals }));
+
+    // Send buffered content for each terminal
+    for (const [name, entry] of registry.entries()) {
+      if (entry.buffer) {
+        ws.send(JSON.stringify({ type: "data", name, data: entry.buffer }));
+      }
+    }
+
+    // Handle messages from client (keyboard input)
+    ws.on("message", (message: Buffer) => {
+      try {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === "input" && msg.name && msg.data) {
+          const entry = registry.get(msg.name);
+          if (entry && entry.alive) {
+            entry.pty.write(msg.data);
+          }
+        }
+      } catch {
+        // Ignore invalid messages
+      }
+    });
+
+    ws.on("close", () => {
+      wsClients.delete(ws);
+    });
   });
 
   // Track connections for clean shutdown
@@ -318,6 +396,18 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     socket.on("close", () => connections.delete(socket));
   });
 
+  // Open browser if headed mode
+  if (headed) {
+    const url = `http://localhost:${port}`;
+    const openCommand =
+      process.platform === "darwin"
+        ? `open "${url}"`
+        : process.platform === "win32"
+          ? `start "${url}"`
+          : `xdg-open "${url}"`;
+    exec(openCommand);
+  }
+
   let cleaningUp = false;
 
   const cleanup = async () => {
@@ -326,7 +416,14 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
 
     console.log("\nShutting down...");
 
-    // Close connections
+    // Close WebSocket connections
+    for (const ws of wsClients) {
+      ws.close();
+    }
+    wsClients.clear();
+    wss.close();
+
+    // Close HTTP connections
     for (const socket of connections) {
       socket.destroy();
     }

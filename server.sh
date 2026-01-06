@@ -1,4 +1,5 @@
 #!/bin/bash
 # Start the dev-terminal server
+# Usage: ./server.sh [--headed]
 cd "$(dirname "$0")"
-npm run start-server
+npx tsx scripts/start-server.ts "$@"
