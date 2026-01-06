@@ -1,4 +1,6 @@
-# dev-terminal
+<p align="center">
+  <img src="assets/header.jpg" alt="dev-terminal - Terminal automation for AI assistants" width="100%">
+</p>
 
 Terminal automation for AI assistants. Inspired by [dev-browser](https://github.com/sawyerhood/dev-browser).
 
