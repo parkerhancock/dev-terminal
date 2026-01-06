@@ -26,6 +26,7 @@
         align-items: center;
         gap: 16px;
         border-bottom: 1px solid #404040;
+        flex-shrink: 0;
       }
       header h1 {
         font-size: 14px;
@@ -52,8 +53,36 @@
         background: #1e1e1e;
         color: #fff;
       }
-      .status {
+      .header-right {
         margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .view-toggle {
+        display: flex;
+        gap: 2px;
+        background: #3d3d3d;
+        border-radius: 4px;
+        padding: 2px;
+      }
+      .view-toggle button {
+        padding: 4px 8px;
+        background: transparent;
+        border: none;
+        border-radius: 3px;
+        color: #888;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .view-toggle button:hover {
+        color: #ccc;
+      }
+      .view-toggle button.active {
+        background: #1e1e1e;
+        color: #fff;
+      }
+      .status {
         font-size: 12px;
         color: #888;
       }
@@ -63,19 +92,98 @@
       .status.disconnected {
         color: #f14c4c;
       }
+
+      /* Main container */
       main {
         flex: 1;
         display: flex;
         overflow: hidden;
+        position: relative;
       }
-      .terminal-container {
-        flex: 1;
+
+      /* Tab mode */
+      main.tab-mode .terminal-container {
+        position: absolute;
+        inset: 0;
         padding: 8px;
         display: none;
       }
-      .terminal-container.active {
+      main.tab-mode .terminal-container.active {
         display: block;
       }
+      main.tab-mode .tile-label {
+        display: none;
+      }
+
+      /* Tiled mode */
+      main.tiled-mode {
+        display: flex;
+        flex-wrap: wrap;
+      }
+      main.tiled-mode .terminal-container {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #333;
+        min-width: 200px;
+        min-height: 150px;
+        position: relative;
+      }
+      main.tiled-mode .terminal-container.focused {
+        border-color: #4ec9b0;
+      }
+      main.tiled-mode .tile-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 8px;
+        background: #2d2d2d;
+        font-size: 11px;
+        color: #888;
+        border-bottom: 1px solid #333;
+        cursor: move;
+        user-select: none;
+      }
+      main.tiled-mode .terminal-container.focused .tile-label {
+        background: #333;
+        color: #4ec9b0;
+      }
+      main.tiled-mode .term-wrapper {
+        flex: 1;
+        padding: 4px;
+        overflow: hidden;
+      }
+
+      /* Resize handles */
+      .resize-handle {
+        position: absolute;
+        background: transparent;
+        z-index: 10;
+      }
+      .resize-handle:hover {
+        background: #4ec9b0;
+      }
+      .resize-handle.horizontal {
+        height: 6px;
+        cursor: row-resize;
+        left: 0;
+        right: 0;
+        bottom: -3px;
+      }
+      .resize-handle.vertical {
+        width: 6px;
+        cursor: col-resize;
+        top: 0;
+        bottom: 0;
+        right: -3px;
+      }
+      .resize-handle.corner {
+        width: 12px;
+        height: 12px;
+        cursor: nwse-resize;
+        right: -6px;
+        bottom: -6px;
+      }
+
       .no-terminals {
         display: flex;
         align-items: center;
@@ -84,15 +192,26 @@
         color: #666;
         font-size: 14px;
       }
+
+      /* Hide tabs in tiled mode */
+      body.tiled-view .tabs {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <header>
       <h1>dev-terminal</h1>
       <div class="tabs" id="tabs"></div>
-      <div class="status disconnected" id="status">Disconnected</div>
+      <div class="header-right">
+        <div class="view-toggle">
+          <button id="tab-view-btn" class="active" title="Tab view">Tabs</button>
+          <button id="tiled-view-btn" title="Tiled view">Tiles</button>
+        </div>
+        <div class="status disconnected" id="status">Disconnected</div>
+      </div>
     </header>
-    <main id="main">
+    <main id="main" class="tab-mode">
       <div class="no-terminals" id="no-terminals">No terminals active</div>
     </main>
 
@@ -100,9 +219,14 @@
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script>
       const wsUrl = `ws://${window.location.host}/ws`;
-      const terminals = new Map(); // name -> { term, container, fit }
+      const terminals = new Map(); // name -> { term, container, fit, wrapper }
       let activeTerminal = null;
+      let focusedTerminal = null;
       let ws = null;
+      let viewMode = "tabs"; // 'tabs' or 'tiled'
+
+      // Tiled layout state
+      const tileLayout = new Map(); // name -> { width, height, x, y }
 
       function connect() {
         ws = new WebSocket(wsUrl);
@@ -115,7 +239,6 @@
         ws.onclose = () => {
           document.getElementById("status").textContent = "Disconnected";
           document.getElementById("status").className = "status disconnected";
-          // Reconnect after delay
           setTimeout(connect, 2000);
         };
 
@@ -132,26 +255,21 @@
       function handleMessage(msg) {
         switch (msg.type) {
           case "terminals":
-            // Full list of terminals
             updateTerminalList(msg.terminals);
             break;
           case "created":
-            // New terminal created
             addTerminal(msg.name, msg.size);
             break;
           case "data":
-            // Data from terminal
             const entry = terminals.get(msg.name);
             if (entry) {
               entry.term.write(msg.data);
             }
             break;
           case "closed":
-            // Terminal closed
             removeTerminal(msg.name);
             break;
           case "resized":
-            // Terminal resized
             const resized = terminals.get(msg.name);
             if (resized) {
               resized.term.resize(msg.size.cols, msg.size.rows);
@@ -161,13 +279,11 @@
       }
 
       function updateTerminalList(terminalList) {
-        // Add any new terminals
         for (const { name, size } of terminalList) {
           if (!terminals.has(name)) {
             addTerminal(name, size);
           }
         }
-        // Remove terminals that no longer exist
         for (const name of terminals.keys()) {
           if (!terminalList.find((t) => t.name === name)) {
             removeTerminal(name);
@@ -189,12 +305,37 @@
         const container = document.createElement("div");
         container.className = "terminal-container";
         container.id = `term-${name}`;
+
+        // Tile label (visible in tiled mode)
+        const label = document.createElement("div");
+        label.className = "tile-label";
+        label.innerHTML = `<span>${name}</span>`;
+        container.appendChild(label);
+
+        // Terminal wrapper
+        const wrapper = document.createElement("div");
+        wrapper.className = "term-wrapper";
+        container.appendChild(wrapper);
+
+        // Resize handles (for tiled mode)
+        const hHandle = document.createElement("div");
+        hHandle.className = "resize-handle horizontal";
+        container.appendChild(hHandle);
+
+        const vHandle = document.createElement("div");
+        vHandle.className = "resize-handle vertical";
+        container.appendChild(vHandle);
+
+        const cornerHandle = document.createElement("div");
+        cornerHandle.className = "resize-handle corner";
+        container.appendChild(cornerHandle);
+
         document.getElementById("main").appendChild(container);
 
         // Create xterm instance
         const term = new Terminal({
           cursorBlink: true,
-          fontSize: 14,
+          fontSize: 13,
           fontFamily: '"SF Mono", Menlo, Monaco, "Courier New", monospace',
           theme: {
             background: "#1e1e1e",
@@ -208,8 +349,13 @@
 
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
-        term.open(container);
-        fit.fit();
+        term.open(wrapper);
+
+        // Focus handling
+        container.addEventListener("click", () => {
+          setFocusedTerminal(name);
+          term.focus();
+        });
 
         // Send input to server
         term.onData((data) => {
@@ -224,7 +370,16 @@
           }
         });
 
-        terminals.set(name, { term, container, tab, fit });
+        // Initialize tile layout
+        tileLayout.set(name, {
+          width: 50,
+          height: 50,
+        });
+
+        terminals.set(name, { term, container, tab, fit, wrapper, label });
+
+        // Setup resize handlers
+        setupResizeHandlers(name, container, hHandle, vHandle, cornerHandle);
 
         // Hide "no terminals" message
         document.getElementById("no-terminals").style.display = "none";
@@ -232,13 +387,74 @@
         // Switch to this terminal if it's the first one
         if (terminals.size === 1) {
           switchTerminal(name);
+          setFocusedTerminal(name);
         }
 
-        // Handle window resize
-        window.addEventListener("resize", () => {
-          if (activeTerminal === name) {
-            fit.fit();
+        // Initial fit
+        requestAnimationFrame(() => {
+          fit.fit();
+          if (viewMode === "tiled") {
+            updateTiledLayout();
           }
+        });
+      }
+
+      function setupResizeHandlers(name, container, hHandle, vHandle, cornerHandle) {
+        let startX, startY, startWidth, startHeight;
+
+        function onMouseMove(e, resizeH, resizeV) {
+          const main = document.getElementById("main");
+          const rect = main.getBoundingClientRect();
+          const layout = tileLayout.get(name);
+
+          if (resizeH) {
+            const newHeight =
+              ((e.clientY - container.offsetTop - main.offsetTop) / rect.height) * 100;
+            layout.height = Math.max(15, Math.min(85, newHeight));
+          }
+          if (resizeV) {
+            const newWidth =
+              ((e.clientX - container.offsetLeft - main.offsetLeft) / rect.width) * 100;
+            layout.width = Math.max(15, Math.min(85, newWidth));
+          }
+
+          updateTiledLayout();
+        }
+
+        function onMouseUp() {
+          document.removeEventListener("mousemove", currentMoveHandler);
+          document.removeEventListener("mouseup", onMouseUp);
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        }
+
+        let currentMoveHandler;
+
+        hHandle.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          document.body.style.cursor = "row-resize";
+          document.body.style.userSelect = "none";
+          currentMoveHandler = (e) => onMouseMove(e, true, false);
+          document.addEventListener("mousemove", currentMoveHandler);
+          document.addEventListener("mouseup", onMouseUp);
+        });
+
+        vHandle.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+          currentMoveHandler = (e) => onMouseMove(e, false, true);
+          document.addEventListener("mousemove", currentMoveHandler);
+          document.addEventListener("mouseup", onMouseUp);
+        });
+
+        cornerHandle.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          document.body.style.cursor = "nwse-resize";
+          document.body.style.userSelect = "none";
+          currentMoveHandler = (e) => onMouseMove(e, true, true);
+          document.addEventListener("mousemove", currentMoveHandler);
+          document.addEventListener("mouseup", onMouseUp);
         });
       }
 
@@ -250,20 +466,24 @@
         entry.container.remove();
         entry.tab.remove();
         terminals.delete(name);
+        tileLayout.delete(name);
 
-        // Show "no terminals" if none left
         if (terminals.size === 0) {
           document.getElementById("no-terminals").style.display = "flex";
           activeTerminal = null;
-        } else if (activeTerminal === name) {
-          // Switch to another terminal
+          focusedTerminal = null;
+        } else if (activeTerminal === name || focusedTerminal === name) {
           const firstName = terminals.keys().next().value;
           switchTerminal(firstName);
+          setFocusedTerminal(firstName);
+        }
+
+        if (viewMode === "tiled") {
+          updateTiledLayout();
         }
       }
 
       function switchTerminal(name) {
-        // Deactivate current
         if (activeTerminal) {
           const prev = terminals.get(activeTerminal);
           if (prev) {
@@ -272,16 +492,119 @@
           }
         }
 
-        // Activate new
         const entry = terminals.get(name);
         if (entry) {
           entry.container.classList.add("active");
           entry.tab.classList.add("active");
-          entry.fit.fit();
-          entry.term.focus();
           activeTerminal = name;
+
+          requestAnimationFrame(() => {
+            entry.fit.fit();
+            entry.term.focus();
+          });
         }
       }
+
+      function setFocusedTerminal(name) {
+        if (focusedTerminal) {
+          const prev = terminals.get(focusedTerminal);
+          if (prev) {
+            prev.container.classList.remove("focused");
+          }
+        }
+
+        const entry = terminals.get(name);
+        if (entry) {
+          entry.container.classList.add("focused");
+          focusedTerminal = name;
+        }
+      }
+
+      function setViewMode(mode) {
+        viewMode = mode;
+        const main = document.getElementById("main");
+
+        document.getElementById("tab-view-btn").classList.toggle("active", mode === "tabs");
+        document.getElementById("tiled-view-btn").classList.toggle("active", mode === "tiled");
+        document.body.classList.toggle("tiled-view", mode === "tiled");
+
+        if (mode === "tabs") {
+          main.className = "tab-mode";
+          // Reset container styles
+          for (const [name, entry] of terminals) {
+            entry.container.style.width = "";
+            entry.container.style.height = "";
+            entry.container.style.flex = "";
+          }
+          // Make sure active terminal is shown
+          if (activeTerminal) {
+            const entry = terminals.get(activeTerminal);
+            if (entry) {
+              requestAnimationFrame(() => entry.fit.fit());
+            }
+          }
+        } else {
+          main.className = "tiled-mode";
+          updateTiledLayout();
+        }
+      }
+
+      function updateTiledLayout() {
+        if (viewMode !== "tiled") return;
+
+        const count = terminals.size;
+        if (count === 0) return;
+
+        const main = document.getElementById("main");
+        const rect = main.getBoundingClientRect();
+
+        // Calculate grid layout
+        const cols = Math.ceil(Math.sqrt(count));
+        const rows = Math.ceil(count / cols);
+
+        const baseWidth = 100 / cols;
+        const baseHeight = 100 / rows;
+
+        let i = 0;
+        for (const [name, entry] of terminals) {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+
+          // Use custom sizes if set, otherwise use grid defaults
+          const layout = tileLayout.get(name);
+          const width = layout?.width || baseWidth;
+          const height = layout?.height || baseHeight;
+
+          entry.container.style.width = `calc(${baseWidth}% - 2px)`;
+          entry.container.style.height = `calc(${baseHeight}% - 2px)`;
+          entry.container.style.flex = "none";
+
+          // Fit terminal after layout
+          requestAnimationFrame(() => {
+            entry.fit.fit();
+          });
+
+          i++;
+        }
+      }
+
+      // View mode toggle handlers
+      document.getElementById("tab-view-btn").addEventListener("click", () => setViewMode("tabs"));
+      document
+        .getElementById("tiled-view-btn")
+        .addEventListener("click", () => setViewMode("tiled"));
+
+      // Handle window resize
+      window.addEventListener("resize", () => {
+        if (viewMode === "tabs" && activeTerminal) {
+          const entry = terminals.get(activeTerminal);
+          if (entry) entry.fit.fit();
+        } else if (viewMode === "tiled") {
+          for (const entry of terminals.values()) {
+            entry.fit.fit();
+          }
+        }
+      });
 
       // Start connection
       connect();
