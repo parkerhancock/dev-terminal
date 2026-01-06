@@ -1,0 +1,36 @@
+{
+  "name": "dev-terminal",
+  "version": "0.1.0",
+  "description": "Persistent terminal session management for AI assistants",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start-server": "npx tsx scripts/start-server.ts",
+    "dev": "npx tsx watch scripts/start-server.ts",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
+  },
+  "lint-staged": {
+    "*.{js,ts,json,md,yml,yaml}": "prettier --write"
+  },
+  "imports": {
+    "@/*": "./src/*"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "node-pty": "^1.0.0",
+    "strip-ansi": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
