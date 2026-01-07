@@ -11,9 +11,7 @@
       "description": "Terminal/PTY automation with persistent sessions. Run TUI apps, send keystrokes, capture screens.",
       "version": "0.1.0",
       "strict": false,
-      "skills": [
-        "./"
-      ]
+      "skills": ["./skills/dev-terminal"]
     }
   ]
 }
