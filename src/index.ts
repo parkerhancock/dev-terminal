@@ -6,12 +6,11 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { exec } from "child_process";
 import express, { type Express, type Request, type Response } from "express";
-import * as pty from "node-pty";
-import type { IPty } from "node-pty";
 import type { Socket } from "net";
 import { WebSocketServer, WebSocket } from "ws";
 import stripAnsi from "strip-ansi";
 import ansiToSvg from "ansi-to-svg";
+import { LocalPtyBackend, SshPtyBackend, type TerminalBackend } from "./backend.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -43,7 +42,7 @@ export interface DevTerminalServer {
 }
 
 interface TerminalEntry {
-  pty: IPty;
+  backend: TerminalBackend;
   name: string;
   buffer: string;
   maxBufferSize: number;
@@ -104,9 +103,9 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
   });
 
   // POST /terminals - get or create terminal
-  app.post("/terminals", (req: Request, res: Response) => {
+  app.post("/terminals", async (req: Request, res: Response) => {
     const body = req.body as CreateTerminalRequest;
-    const { name, command, args, cols, rows, cwd, env } = body;
+    const { name, command, args, cols, rows, cwd, env, ssh } = body;
 
     if (!name || typeof name !== "string") {
       res.status(400).json({ error: "name is required and must be a string" });
@@ -123,7 +122,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     if (entry) {
       const response: CreateTerminalResponse = {
         name,
-        pid: entry.pty.pid,
+        pid: entry.backend.pid,
         size: entry.size,
       };
       res.json(response);
@@ -133,20 +132,33 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     // Create new terminal
     const termCols = cols ?? DEFAULT_COLS;
     const termRows = rows ?? DEFAULT_ROWS;
-    const shell = command ?? DEFAULT_SHELL;
-    const shellArgs = args ?? (command ? [] : DEFAULT_SHELL_ARGS);
 
     try {
-      const ptyProcess = pty.spawn(shell, shellArgs, {
-        name: "xterm-256color",
-        cols: termCols,
-        rows: termRows,
-        cwd: cwd ?? process.cwd(),
-        env: { ...process.env, ...env } as Record<string, string>,
-      });
+      let backend: TerminalBackend;
+
+      if (ssh) {
+        // SSH terminal
+        backend = await SshPtyBackend.create({
+          ssh,
+          cols: termCols,
+          rows: termRows,
+        });
+      } else {
+        // Local terminal
+        const shell = command ?? DEFAULT_SHELL;
+        const shellArgs = args ?? (command ? [] : DEFAULT_SHELL_ARGS);
+        backend = new LocalPtyBackend({
+          command: shell,
+          args: shellArgs,
+          cols: termCols,
+          rows: termRows,
+          cwd: cwd ?? process.cwd(),
+          env: { ...process.env, ...env } as Record<string, string>,
+        });
+      }
 
       entry = {
-        pty: ptyProcess,
+        backend,
         name,
         buffer: "",
         maxBufferSize: MAX_BUFFER_SIZE,
@@ -155,7 +167,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       };
 
       // Capture output to buffer and broadcast to WebSocket clients
-      ptyProcess.onData((data: string) => {
+      backend.onData((data: string) => {
         if (entry) {
           entry.buffer += data;
           // Trim buffer if too large (keep most recent)
@@ -168,7 +180,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       });
 
       // Track exit
-      ptyProcess.onExit(({ exitCode }) => {
+      backend.onExit((exitCode) => {
         if (entry) {
           entry.alive = false;
           entry.exitCode = exitCode;
@@ -183,13 +195,13 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
 
       const response: CreateTerminalResponse = {
         name,
-        pid: ptyProcess.pid,
+        pid: backend.pid,
         size: entry.size,
       };
       res.json(response);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: `Failed to spawn terminal: ${message}` });
+      res.status(500).json({ error: `Failed to create terminal: ${message}` });
     }
   });
 
@@ -204,7 +216,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     }
 
     try {
-      entry.pty.kill();
+      entry.backend.kill();
     } catch {
       // Already dead
     }
@@ -236,7 +248,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       return;
     }
 
-    entry.pty.write(data);
+    entry.backend.write(data);
 
     const response: WriteResponse = {
       success: true,
@@ -263,7 +275,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
       return;
     }
 
-    entry.pty.resize(cols, rows);
+    entry.backend.resize(cols, rows);
     entry.size = { cols, rows };
     broadcast({ type: "resized", name, size: entry.size });
 
@@ -378,7 +390,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
         if (msg.type === "input" && msg.name && msg.data) {
           const entry = registry.get(msg.name);
           if (entry && entry.alive) {
-            entry.pty.write(msg.data);
+            entry.backend.write(msg.data);
           }
         }
       } catch {
@@ -434,7 +446,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     // Kill all terminals
     for (const entry of registry.values()) {
       try {
-        entry.pty.kill();
+        entry.backend.kill();
       } catch {
         // Already dead
       }

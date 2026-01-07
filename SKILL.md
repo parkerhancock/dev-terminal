@@ -92,6 +92,75 @@ const term = await client.terminal("my-term", {
 });
 ```
 
+## SSH Remote Terminals
+
+Connect to remote servers via SSH. The API is identical to local terminals.
+
+```typescript
+import { connect } from "./src/client.js";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+
+const client = await connect();
+
+// SSH with private key
+const term = await client.terminal("remote-server", {
+  ssh: {
+    host: "192.168.1.100",
+    username: "deploy",
+    privateKey: fs.readFileSync(path.join(os.homedir(), ".ssh/id_rsa"), "utf8"),
+  },
+});
+
+// SSH with password
+const term = await client.terminal("remote-server", {
+  ssh: {
+    host: "example.com",
+    username: "admin",
+    password: "secret",
+  },
+});
+
+// SSH with agent (uses SSH_AUTH_SOCK)
+const term = await client.terminal("remote-server", {
+  ssh: {
+    host: "example.com",
+    username: "admin",
+    agent: process.env.SSH_AUTH_SOCK,
+  },
+});
+
+// SSH with custom port and encrypted key
+const term = await client.terminal("remote-server", {
+  ssh: {
+    host: "example.com",
+    port: 2222,
+    username: "admin",
+    privateKey: fs.readFileSync("/path/to/key", "utf8"),
+    passphrase: "key-passphrase",
+  },
+});
+```
+
+**SSH Options:**
+
+| Option       | Type   | Description                      |
+| ------------ | ------ | -------------------------------- |
+| `host`       | string | Remote hostname or IP (required) |
+| `port`       | number | SSH port (default: 22)           |
+| `username`   | string | SSH username (required)          |
+| `password`   | string | Password authentication          |
+| `privateKey` | string | Private key content (not path)   |
+| `passphrase` | string | Passphrase for encrypted keys    |
+| `agent`      | string | Path to SSH agent socket         |
+
+**Notes:**
+
+- SSH terminals don't have a `pid` (it's `undefined`)
+- All Terminal methods work the same (write, key, snapshot, etc.)
+- The remote shell is determined by the server, not local settings
+
 ## Key Principles
 
 1. **Small scripts**: Each script does ONE thing (start app, check screen, send key)

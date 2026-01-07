@@ -13,11 +13,12 @@ import type {
   ServerInfoResponse,
   TerminalSize,
   SpecialKeyName,
+  SshOptions,
 } from "./types.js";
 import { SpecialKeys } from "./types.js";
 
 export { SpecialKeys };
-export type { SpecialKeyName };
+export type { SpecialKeyName, SshOptions };
 
 export interface TerminalOptions {
   /** Command to run (default: bash or powershell) */
@@ -32,6 +33,8 @@ export interface TerminalOptions {
   cwd?: string;
   /** Additional environment variables */
   env?: Record<string, string>;
+  /** SSH connection options (for remote terminals) */
+  ssh?: SshOptions;
 }
 
 export interface SnapshotOptions {
@@ -42,8 +45,8 @@ export interface SnapshotOptions {
 export interface Terminal {
   /** Terminal name */
   name: string;
-  /** Process ID */
-  pid: number;
+  /** Process ID (undefined for SSH terminals) */
+  pid?: number;
   /** Current size */
   size: TerminalSize;
 
@@ -216,6 +219,7 @@ export async function connect(serverUrl = "http://localhost:9333"): Promise<DevT
         rows: options.rows,
         cwd: options.cwd,
         env: options.env,
+        ssh: options.ssh,
       };
 
       const info = await apiFetch<CreateTerminalResponse>("/terminals", {

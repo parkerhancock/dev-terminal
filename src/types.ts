@@ -7,6 +7,16 @@ export interface TerminalSize {
   rows: number;
 }
 
+export interface SshOptions {
+  host: string;
+  port?: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  agent?: string;
+}
+
 export interface CreateTerminalRequest {
   name: string;
   command?: string;
@@ -15,11 +25,12 @@ export interface CreateTerminalRequest {
   rows?: number;
   cwd?: string;
   env?: Record<string, string>;
+  ssh?: SshOptions;
 }
 
 export interface CreateTerminalResponse {
   name: string;
-  pid: number;
+  pid?: number;
   size: TerminalSize;
 }
 

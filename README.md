@@ -7,6 +7,7 @@ Terminal automation for AI assistants. Inspired by [dev-browser](https://github.
 **Key features:**
 
 - **Persistent sessions** - Create once, interact across multiple scripts
+- **SSH support** - Connect to remote servers with the same API
 - **Headed mode** - Browser UI to watch AI actions in real-time
 - **Full PTY support** - Run interactive TUI apps (htop, vim, ncurses, etc.)
 - **LLM-friendly snapshots** - Text, ANSI, or SVG output for AI analysis
@@ -64,6 +65,22 @@ client.disconnect();
 ```
 
 By default, terminals use your system shell (`$SHELL`) as a login shell, so your aliases, PATH, and environment are available. Override with `command` and `args` options.
+
+## SSH
+
+Connect to remote servers via SSH:
+
+```typescript
+const term = await client.terminal("remote", {
+  ssh: {
+    host: "example.com",
+    username: "deploy",
+    privateKey: fs.readFileSync("~/.ssh/id_rsa", "utf8"),
+  },
+});
+```
+
+All terminal methods work identically for local and remote terminals.
 
 ## Headed Mode
 
