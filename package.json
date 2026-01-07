@@ -20,7 +20,7 @@
     "@/*": "./src/*"
   },
   "dependencies": {
-    "ansi-to-svg": "^1.4.3",
+    "ansi_up": "^6.0.6",
     "express": "^4.21.0",
     "node-pty": "^1.0.0",
     "ssh2": "^1.17.0",

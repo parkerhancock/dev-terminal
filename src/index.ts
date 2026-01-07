@@ -9,7 +9,7 @@ import express, { type Express, type Request, type Response } from "express";
 import type { Socket } from "net";
 import { WebSocketServer, WebSocket } from "ws";
 import stripAnsi from "strip-ansi";
-import ansiToSvg from "ansi-to-svg";
+import { AnsiUp } from "ansi_up";
 import { LocalPtyBackend, SshPtyBackend, type TerminalBackend } from "./backend.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -316,12 +316,29 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
         // Take only visible screen portion for cleaner SVG
         const rawLines = raw.split("\n");
         const visibleRaw = rawLines.slice(-entry.size.rows).join("\n");
-        svg = ansiToSvg(visibleRaw, {
-          paddingTop: 10,
-          paddingLeft: 10,
-          paddingRight: 10,
-          paddingBottom: 10,
-        });
+
+        // Convert ANSI to HTML using ansi_up (supports 256-color and true color)
+        const ansiUp = new AnsiUp();
+        ansiUp.use_classes = false; // Use inline styles for colors
+        const html = ansiUp.ansi_to_html(visibleRaw);
+
+        // Calculate SVG dimensions
+        const fontSize = 14;
+        const lineHeight = 18;
+        const charWidth = 8.4; // Approximate for monospace
+        const padding = 10;
+        const visibleLines = visibleRaw.split("\n");
+        const maxLineLength = Math.max(...visibleLines.map((l) => stripAnsi(l).length), 1);
+        const width = maxLineLength * charWidth + padding * 2;
+        const height = visibleLines.length * lineHeight + padding * 2;
+
+        // Create SVG with foreignObject for HTML content
+        svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect width="100%" height="100%" fill="#000000"/>
+  <foreignObject x="${padding}" y="${padding}" width="${width - padding * 2}" height="${height - padding * 2}">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'SauceCodePro Nerd Font', 'Source Code Pro', 'Courier New', monospace; font-size: ${fontSize}px; line-height: ${lineHeight}px; color: #D3D3D3; white-space: pre; background: transparent;">${html}</div>
+  </foreignObject>
+</svg>`;
       } catch (err) {
         // If SVG rendering fails, continue without it
         console.error("SVG rendering failed:", err);
