@@ -63,6 +63,8 @@ await term.key("ctrl+c");
 client.disconnect();
 ```
 
+By default, terminals use your system shell (`$SHELL`) as a login shell, so your aliases, PATH, and environment are available. Override with `command` and `args` options.
+
 ## Headed Mode
 
 Start with `--headed` to open a browser UI showing all terminals in real-time:
@@ -72,7 +74,7 @@ Start with `--headed` to open a browser UI showing all terminals in real-time:
 ```
 
 - **Live view** - Watch AI actions as they happen
-- **Multiple tabs** - Switch between terminal sessions
+- **Tabs or tiles** - Switch between terminals or view all at once
 - **Bidirectional** - Type in browser to interact alongside AI
 - **Auto-reconnect** - Reconnects if connection drops
 
