@@ -61,6 +61,37 @@ client.disconnect();
 EOF
 ```
 
+## Shell Defaults
+
+By default, terminals use:
+
+- **Shell**: User's default shell (`$SHELL` env var, e.g., zsh on macOS, bash on Linux)
+- **Mode**: Login shell (`-l` flag) - loads full profile (`~/.zprofile`, `~/.bash_profile`)
+
+This means your shell aliases, PATH, and environment are available.
+
+**Override the shell:**
+
+```typescript
+// Use a specific shell
+const term = await client.terminal("my-term", {
+  command: "bash",
+  args: ["-l"], // keep as login shell
+});
+
+// Non-login shell (only loads ~/.bashrc, not ~/.bash_profile)
+const term = await client.terminal("my-term", {
+  command: "bash",
+  args: [], // no -l flag
+});
+
+// Run a command directly (not a shell)
+const term = await client.terminal("my-term", {
+  command: "python",
+  args: ["-m", "my_app"],
+});
+```
+
 ## Key Principles
 
 1. **Small scripts**: Each script does ONE thing (start app, check screen, send key)
@@ -81,11 +112,13 @@ EOF
 ```typescript
 const client = await connect();
 
-// Get or create named terminal
+// Get or create named terminal (uses default shell as login shell)
 const term = await client.terminal("name");
+
+// With options
 const term = await client.terminal("name", {
-  command: "python",
-  args: ["-m", "my_app"],
+  command: "python", // override shell/command
+  args: ["-m", "my_app"], // override args (clears default -l flag)
   cols: 120,
   rows: 40,
   cwd: "/path/to/dir",

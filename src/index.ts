@@ -52,7 +52,9 @@ interface TerminalEntry {
   size: TerminalSize;
 }
 
-const DEFAULT_SHELL = process.platform === "win32" ? "powershell.exe" : "bash";
+const DEFAULT_SHELL =
+  process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "bash");
+const DEFAULT_SHELL_ARGS = ["-l"]; // Login shell by default
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
 const MAX_BUFFER_SIZE = 100000; // ~100KB of scrollback
@@ -132,7 +134,7 @@ export async function serve(options: ServeOptions = {}): Promise<DevTerminalServ
     const termCols = cols ?? DEFAULT_COLS;
     const termRows = rows ?? DEFAULT_ROWS;
     const shell = command ?? DEFAULT_SHELL;
-    const shellArgs = args ?? [];
+    const shellArgs = args ?? (command ? [] : DEFAULT_SHELL_ARGS);
 
     try {
       const ptyProcess = pty.spawn(shell, shellArgs, {
